@@ -1,23 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
 
 namespace AutoStats
 {
+    //TODO The doc of the strava class
+    //TODO Make the Strava class non-static
     public static class Strava
     {
         private static HttpClient httpClient = new HttpClient();
         private static string _accesToken;
         private static int _accesTokenExpiration;
-
-        public static async Task<dynamic> ActivitiesAfter(int dateTime)
+        
+        //Todo Make a synchronous ActivitiesAfterAsync
+        public static async Task<dynamic> ActivitiesAfterAsync(int dateTime)
         {
             if (UnixTimestamp.ToEpochTime(DateTime.Now) >= _accesTokenExpiration)
-                await NewAccesToken();
+                await NewAccesTokenAsync();
             
             var uri = new Uri($"https://www.strava.com/api/v3/athlete/activities?after={dateTime}");
             httpClient.DefaultRequestHeaders.Authorization =
@@ -28,12 +29,30 @@ namespace AutoStats
             return new JsonReader(httpResponse).Content;
         }
         
-        private static async Task NewAccesToken()
+        public static dynamic ActivitiesAfter(int dateTime)
         {
-            dynamic jsonSettings =
-                new JsonReader(
-                        @"C:\Users\guill\Programmation\dotNET_doc\projets\Console\AutoStats\AutoStats\appsettings.json")
-                    .Content;
+            if (UnixTimestamp.ToEpochTime(DateTime.Now) >= _accesTokenExpiration)
+            {
+                var newAccTkTask = NewAccesTokenAsync();
+                newAccTkTask.Wait();
+            }
+            
+            var uri = new Uri($"https://www.strava.com/api/v3/athlete/activities?after={dateTime}");
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accesToken);
+            
+            var httpResponseTask = httpClient.GetAsync(uri);
+            httpResponseTask.Wait();
+            var httpResponse = httpResponseTask.Result;
+            httpResponse.EnsureSuccessStatusCode();
+
+            return new JsonReader(httpResponse).Content;
+        }
+
+        
+        private static async Task NewAccesTokenAsync()
+        {
+            var jsonSettings = new JsonReader(
+                    @"C:\Users\guill\Programmation\dotNET_doc\projets\Console\AutoStats\AutoStats\appsettings.json").Content;
 
             var parameters = new Dictionary<string, string>()
             {
@@ -49,7 +68,7 @@ namespace AutoStats
             var httpResponse = await httpClient.PostAsync(uri, new FormUrlEncodedContent(parameters));
             httpResponse.EnsureSuccessStatusCode();
             
-            dynamic jsonResponse = new JsonReader(httpResponse).Content;
+            var jsonResponse = new JsonReader(httpResponse).Content;
 
             _accesToken = (string)jsonResponse["access_token"];
             _accesTokenExpiration = (int)jsonResponse["expires_at"];

@@ -1,102 +1,119 @@
 ﻿using System;
 using System.IO;
 using OfficeOpenXml;
-using OfficeOpenXml.Drawing.Theme;
 using OfficeOpenXml.FormulaParsing.Exceptions;
 
 namespace AutoStats
 {
-    public static class ExcelCarnet
+    public class ExcelCarnet
     {
-        private static ExcelPackage _package;
-        private static ExcelWorksheet _carnetSheet;
-        private static int _firstJanuaryRow;
-        private static int _beginningYear;
-
-        public static int LastActivity
+        private readonly ExcelPackage package;
+        private readonly ExcelWorksheet carnetSheet;
+        private readonly int firstJanuaryRow;
+        private readonly int beginningYear;
+        
+        /// <summary>
+        /// Return the <see cref="DateTime"/> of the last activity written in the file
+        /// </summary>
+        public DateTime LastActivity
         {
             get
             {
+                //first, get the row of the last activity
                 var row = 0;
-                for (var i = 350; i > 0; i--)
+                for (var i = 365; i > 0; i--) //start reading by the end...
                 {
-                    if(_carnetSheet.GetValue(i, 4) == null) continue;
-                    row = i;
-                    break;
+                    //TODO Associate every column of the excel file in an enum
+                    if (carnetSheet.GetValue(i, 4) != null) // ...and stop when we get a title for an activity
+                    {
+                        row = i;
+                        break;
+                    }
                 }
 
-                var dayOfYear = row - _firstJanuaryRow;
+                var dayOfYear = row - firstJanuaryRow;
 
-                if (dayOfYear < 0)
-                    throw new NotImplementedException();
-                else
-                {
-                    var dateTime = new DateTime(_beginningYear + 1, 1, 1) + new TimeSpan(dayOfYear+1,0,0,0);
-                    return UnixTimestamp.ToEpochTime(dateTime);
-                }
-
+                return new DateTime(beginningYear + 1, 1, 1).AddDays(dayOfYear);
             }
         }
 
-        static ExcelCarnet()
+        
+        /// <summary>
+        /// The default constructor
+        /// </summary>
+        /// <param name="carnetFileInfo">The path of the carnet d'entrainement file</param>
+        /// <param name="firstYear">The beginning year for the carnet</param>
+        public ExcelCarnet(FileInfo carnetFileInfo, int firstYear)
         {
-            var fileInfo = new FileInfo((string)new JsonReader(@"C:\Users\guill\Programmation\dotNET_doc\projets\Console\AutoStats\AutoStats\appsettings.json").Content["Config"]["TrainingSheetPath"]);
-            _package = new ExcelPackage(fileInfo);
-            _carnetSheet = _package.Workbook.Worksheets["Carnet "];
+            package = new ExcelPackage(carnetFileInfo);
+            carnetSheet = package.Workbook.Worksheets["Carnet "];
+            beginningYear = firstYear;
+            
             //get the 1st January row
             var firstWeek = WeekToSheet(1);
             for (var i = 0; i < 7; i++)
             {
-                if (_carnetSheet.GetValue<int>(firstWeek + i, 3) != 1) continue;
-                _firstJanuaryRow = firstWeek + i;
+                if (carnetSheet.GetValue<int>(firstWeek + i, 3) != 1) continue;
+                firstJanuaryRow = firstWeek + i;
                 break;
             }
-
-            var yearJson = (string) new JsonReader(
-                    @"C:\Users\guill\Programmation\dotNET_doc\projets\Console\AutoStats\AutoStats\appsettings.json")
-                .Content["Config"]["Year"];
-            _beginningYear = Convert.ToInt32(yearJson.Split('-')[0]);
         }
         
-        public static void SetNewActivity(DateTime dateTime, Activity activity)
+        /// <summary>
+        /// Set an activity in the carnet
+        /// </summary>
+        /// <param name="activityDate">The date of the activity</param>
+        /// <param name="activity">The activity to set</param>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="activityDate"/> have to be in the first or in the second year of this carnet/></exception>
+        public void SetNewActivity(DateTime activityDate, Activity activity)
         {
-            
-            if (dateTime.Year == _beginningYear)
-                throw new NotImplementedException("Not allowed to Write an activity for this year");
-            else if (dateTime.Year == _beginningYear + 1)
+            if (activityDate.Year == beginningYear || activityDate.Year == beginningYear + 1)
             {
-                var row = _firstJanuaryRow + dateTime.DayOfYear - 1;
-                WriteActivity(row, activity);
+                var rowRelativeTo1StJ = activityDate - new DateTime(beginningYear + 1, 1, 1);
+                var row = firstJanuaryRow + rowRelativeTo1StJ.Days; 
+                row += activityDate.Year == beginningYear ? 1 : 0;
+                
+                //write the activity on the file
+                carnetSheet.SetValue(row, 4, activity.Name);
+                carnetSheet.SetValue(row, 5, activity.Time);
+                carnetSheet.SetValue(row, 6, activity.Distance);
+                carnetSheet.SetValue(row, 7, activity.AvrSpeed);
+                carnetSheet.SetValue(row, 9, activity.HeartRate);
+                carnetSheet.SetValue(row, 10, activity.HeartMax);
+                return;
             }
+            
+            throw new ArgumentOutOfRangeException(nameof(activityDate));
         }
+        
+        /// <summary>
+        /// Save and dispose of the Excel sheet
+        /// </summary>
+        public void SaveAndCloseExcel()
+        {
+            package.Save();
+            package.Dispose();
+        }
+        
+        /// <summary>
+        /// Transform a week number into a row 
+        /// </summary>
+        /// <param name="week">The week number from the beginning of the year</param>
+        /// <returns>The row relative to a week</returns>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="week"/> have to be under or equal to 53"/></exception>
+        /// <exception cref="ExcelErrorValueException">This <paramref name="week"/> isn't in the excel file</exception>
+        private int WeekToSheet(int week)
+        {
+            if (week > 53) throw new ArgumentOutOfRangeException(nameof(week));
 
-        public static void SaveAndCloseExcel()
-        {
-            _package.Save();
-            _package.Dispose();
-        }
-        
-        
-        private static int WeekToSheet(int week)
-        {
             for (var i = 2; i <= 366; i++)
             {
-                var content = _carnetSheet.GetValue<int>(i, 2);
+                var content = carnetSheet.GetValue<int>(i, 2);
                 if (content == week)
                     return i;
             }
 
             throw new ExcelErrorValueException("The week n°" + week + " has not been found in the excel file", null);
         }
-        private static void WriteActivity(int row, Activity activity)
-        {
-            _carnetSheet.SetValue(row, 4, activity.Name);
-            _carnetSheet.SetValue(row, 5, activity.Time);
-            _carnetSheet.SetValue(row, 6, activity.Distance);
-            _carnetSheet.SetValue(row, 7, Math.Round(activity.AvrSpeed, 1));
-            _carnetSheet.SetValue(row, 9, activity.HeartRate);
-            _carnetSheet.SetValue(row, 10, activity.HeartMax);
-        }
-
     }
 }
