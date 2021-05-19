@@ -1,67 +1,79 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
 
 namespace AutoStats
 {
-    //TODO The doc of the strava class
-    //TODO Make the Strava class non-static
-    public static class Strava
+    /// <summary>
+    /// A class handling the strava api to do specific requests
+    /// </summary>
+    public class Strava
     {
-        private static HttpClient httpClient = new HttpClient();
-        private static string _accesToken;
-        private static int _accesTokenExpiration;
+        private HttpClient httpClient = new HttpClient();
+        private readonly Dictionary<string, string> refreshData = new();
         
-        //Todo Make a synchronous ActivitiesAfterAsync
-        public static async Task<dynamic> ActivitiesAfterAsync(int dateTime)
+        private string accesToken;
+        private int accesTokenExpiration;
+        
+        /// <summary>
+        /// Default constructor
+        /// </summary>
+        /// <param name="client_id">The strava client id</param>
+        /// <param name="client_secret">The strava client secret</param>
+        /// <param name="refresh_token"> The strava refresh token (all reading)</param>
+        public Strava(string client_id, string client_secret, string refresh_token)
         {
-            if (UnixTimestamp.ToEpochTime(DateTime.Now) >= _accesTokenExpiration)
+            refreshData.Add(nameof(client_id), client_id);
+            refreshData.Add(nameof(client_secret), client_secret);
+            refreshData.Add(nameof(refresh_token), refresh_token);
+            
+            NewAccesTokenAsync().Wait();
+        }
+        
+        /// <summary>
+        /// Get the activities from the strava api asynchronously
+        /// </summary>
+        /// <param name="dateTime">The date to see after</param>
+        /// <returns>The task relative to the method</returns>
+        public async Task<dynamic> ActivitiesAfterAsync(int dateTime)
+        {
+            if (UnixTimestamp.ToEpochTime(DateTime.Now) >= accesTokenExpiration)
                 await NewAccesTokenAsync();
             
-            var uri = new Uri($"https://www.strava.com/api/v3/athlete/activities?after={dateTime}");
-            httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _accesToken);
+            var uri = new Uri($"https://www.strava.com/api/v3/athlete/activities?after={dateTime}&per_page=200");
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accesToken);
+            
             var httpResponse = await httpClient.GetAsync(uri);
             httpResponse.EnsureSuccessStatusCode();
 
             return new JsonReader(httpResponse).Content;
         }
         
-        public static dynamic ActivitiesAfter(int dateTime)
+        /// <summary>
+        /// Get the activities from the strava api
+        /// </summary>
+        /// <param name="dateTime">The date to see after</param>
+        public dynamic ActivitiesAfter(int dateTime)
         {
-            if (UnixTimestamp.ToEpochTime(DateTime.Now) >= _accesTokenExpiration)
-            {
-                var newAccTkTask = NewAccesTokenAsync();
-                newAccTkTask.Wait();
-            }
-            
-            var uri = new Uri($"https://www.strava.com/api/v3/athlete/activities?after={dateTime}");
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accesToken);
-            
-            var httpResponseTask = httpClient.GetAsync(uri);
-            httpResponseTask.Wait();
-            var httpResponse = httpResponseTask.Result;
-            httpResponse.EnsureSuccessStatusCode();
+            var activitiesTask = ActivitiesAfterAsync(dateTime);
+            activitiesTask.Wait();
 
-            return new JsonReader(httpResponse).Content;
+            return activitiesTask.Result;
         }
 
-        
-        private static async Task NewAccesTokenAsync()
+        /// <summary>
+        /// Refresh the access token
+        /// </summary>
+        private async Task NewAccesTokenAsync()
         {
-            var jsonSettings = new JsonReader(
-                    @"C:\Users\guill\Programmation\dotNET_doc\projets\Console\AutoStats\AutoStats\appsettings.json").Content;
-
             var parameters = new Dictionary<string, string>()
             {
-                {"client_id", (string) jsonSettings["Config"]["StravaApi"]["ClientId"]},
-                {"client_secret", (string) jsonSettings["Config"]["StravaApi"]["ClientSecret"]},
-                {"refresh_token", (string) jsonSettings["Config"]["StravaApi"]["RefreshToken"]},
                 {"grant_type", "refresh_token"}
-            };
-            
+            }.Union(refreshData).ToDictionary(pair => pair.Key, pair => pair.Value);;
+
             var uri = new Uri($"https://www.strava.com/api/v3/oauth/token");
             httpClient.DefaultRequestHeaders.Clear();
             
@@ -70,8 +82,8 @@ namespace AutoStats
             
             var jsonResponse = new JsonReader(httpResponse).Content;
 
-            _accesToken = (string)jsonResponse["access_token"];
-            _accesTokenExpiration = (int)jsonResponse["expires_at"];
+            accesToken = (string)jsonResponse["access_token"];
+            accesTokenExpiration = (int)jsonResponse["expires_at"];
         }
     }
 }

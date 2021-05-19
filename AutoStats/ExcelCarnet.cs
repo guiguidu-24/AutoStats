@@ -23,20 +23,18 @@ namespace AutoStats
                 var row = 0;
                 for (var i = 365; i > 0; i--) //start reading by the end...
                 {
-                    //TODO Associate every column of the excel file in an enum
-                    if (carnetSheet.GetValue(i, 4) != null) // ...and stop when we get a title for an activity
+                    if (carnetSheet.GetValue(i, (int)Column.Theme) != null) // ...and stop when we get a title for an activity
                     {
                         row = i;
                         break;
                     }
                 }
-
                 var dayOfYear = row - firstJanuaryRow;
 
                 return new DateTime(beginningYear + 1, 1, 1).AddDays(dayOfYear);
             }
         }
-
+        
         
         /// <summary>
         /// The default constructor
@@ -53,7 +51,7 @@ namespace AutoStats
             var firstWeek = WeekToSheet(1);
             for (var i = 0; i < 7; i++)
             {
-                if (carnetSheet.GetValue<int>(firstWeek + i, 3) != 1) continue;
+                if (carnetSheet.GetValue<int>(firstWeek + i, (int)Column.Day) != 1) continue;
                 firstJanuaryRow = firstWeek + i;
                 break;
             }
@@ -74,12 +72,12 @@ namespace AutoStats
                 row += activityDate.Year == beginningYear ? 1 : 0;
                 
                 //write the activity on the file
-                carnetSheet.SetValue(row, 4, activity.Name);
-                carnetSheet.SetValue(row, 5, activity.Time);
-                carnetSheet.SetValue(row, 6, activity.Distance);
-                carnetSheet.SetValue(row, 7, activity.AvrSpeed);
-                carnetSheet.SetValue(row, 9, activity.HeartRate);
-                carnetSheet.SetValue(row, 10, activity.HeartMax);
+                carnetSheet.SetValue(row, (int)Column.Theme, activity.Name);
+                carnetSheet.SetValue(row, (int)Column.Time, activity.Time);
+                carnetSheet.SetValue(row, (int)Column.Distance, activity.Distance);
+                carnetSheet.SetValue(row, (int)Column.Speed, activity.AvrSpeed);
+                carnetSheet.SetValue(row, (int)Column.AverageHeart, activity.HeartRate);
+                carnetSheet.SetValue(row, (int)Column.MaxHeart, activity.HeartMax);
                 return;
             }
             
@@ -115,5 +113,21 @@ namespace AutoStats
 
             throw new ExcelErrorValueException("The week n°" + week + " has not been found in the excel file", null);
         }
+    }
+
+    public enum Column
+    {
+        Month = 1,
+        Week,
+        Day,
+        Theme,
+        Time,
+        Distance,
+        Speed,
+        AveragePower,
+        AverageHeart,
+        MaxHeart,
+        Sensation,
+        Weather
     }
 }
